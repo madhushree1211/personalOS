@@ -1,8 +1,10 @@
+import time
 from datetime import date
+from threading import Lock
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from .config import get_settings
+from .config import cors_middleware_options, get_settings
 from .db import Base, engine, get_db
 from .models import HealthRecord, Renewal
 from .repositories import Repository
@@ -20,7 +22,14 @@ from .routing.contracts import Intent
 settings=get_settings(); app=FastAPI(title="PersonalOS API",version="3.0.0")
 supervisor_service = SupervisorRoutingService()
 broker_gateway = MockBrokerGateway()
-app.add_middleware(CORSMiddleware,allow_origins=settings.origins or ["*"],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
+cors_options = cors_middleware_options(settings.origins)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_options["allow_origins"],
+    allow_credentials=cors_options["allow_credentials"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 Base.metadata.create_all(engine)
 if settings.seed_demo_data: seed()
 @app.on_event("startup")
@@ -30,11 +39,41 @@ def audit(db,user,event,details=None): Repository(db,user.id if user else None).
 def public_user(u): return {"id":u.id,"name":u.name,"email":u.email,"role":u.role,"permissions":u.permissions or []}
 @app.get("/api/healthz")
 def healthz(): return {"status":"ok","service":settings.app_name}
+_login_failures: dict[tuple[str, str], list[float]] = {}
+_login_limiter_lock = Lock()
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 @app.post("/api/auth/login")
-def login(payload:LoginRequest,db:Session=Depends(get_db)):
-    u=Repository(db).user(payload.email)
-    if not u or not verify_password(payload.password,u.password_hash): audit(db,None,"login-failed",{"email":payload.email}); raise HTTPException(401,"Invalid credentials")
-    audit(db,u,"login",{"email":u.email,"success":True}); return {"token":create_access_token(u),"user":public_user(u)}
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
+    username = payload.email.strip().lower()
+    key = (_client_ip(request), username)
+    now = time.monotonic()
+    with _login_limiter_lock:
+        recent = [timestamp for timestamp in _login_failures.get(key, []) if now - timestamp < 60]
+        if len(recent) >= 5:
+            _login_failures[key] = recent
+            raise HTTPException(status_code=429, detail="Too many login attempts")
+
+    u = Repository(db).user(payload.email)
+    if not u or not verify_password(payload.password, u.password_hash):
+        with _login_limiter_lock:
+            recent = [timestamp for timestamp in _login_failures.get(key, []) if now - timestamp < 60]
+            recent.append(time.monotonic())
+            _login_failures[key] = recent
+        audit(db, None, "login-failed", {"email": payload.email})
+        raise HTTPException(401, "Invalid credentials")
+
+    with _login_limiter_lock:
+        _login_failures.pop(key, None)
+    audit(db, u, "login", {"email": u.email, "success": True})
+    return {"token": create_access_token(u), "user": public_user(u)}
 @app.get("/api/auth/me")
 def me(user=Depends(current_user)): return {"user":public_user(user)}
 @app.post("/api/auth/logout")
@@ -86,6 +125,7 @@ def investment_mfa(proposal_id: str, p: InvestmentMFARequest, db=Depends(get_db)
     try:
         verify_mfa(approval, user_id=user.id, code=p.code)
     except HTTPException as exc:
+        db.commit()
         audit(db, user, "investment-mfa-failed",
               {"proposalId": proposal_id, "reason": exc.detail, "provider": "mock-dev"})
         raise
@@ -106,9 +146,7 @@ def investment_confirm(p:InvestmentConfirmRequest,db=Depends(get_db),user=Depend
     if p.approved:
         if ApprovalState(approval.status) is ApprovalState.PENDING_USER:
             transition(approval, ApprovalState.PENDING_MFA, user_id=user.id)
-        # mfa_code is the preferred explicit boundary; mfa_verified preserves
-        # the development-only legacy API contract.
-        if ApprovalState(approval.status) is ApprovalState.PENDING_MFA and not p.mfa_code and not p.mfa_verified:
+        if ApprovalState(approval.status) is ApprovalState.PENDING_MFA and not p.mfa_code:
             db.commit()
             audit(db, user, "investment-approval-awaiting-mfa",
                   {"proposalId": x.id, "state": approval.status})
@@ -118,9 +156,9 @@ def investment_confirm(p:InvestmentConfirmRequest,db=Depends(get_db),user=Depend
                 "mfa_required": True})
         if ApprovalState(approval.status) is ApprovalState.PENDING_MFA:
             try:
-                verify_mfa(approval, user_id=user.id, code=p.mfa_code,
-                           legacy_assertion=p.mfa_verified)
+                verify_mfa(approval, user_id=user.id, code=p.mfa_code)
             except HTTPException as exc:
+                db.commit()
                 audit(db, user, "investment-mfa-failed",
                       {"proposalId": x.id, "reason": exc.detail, "provider": "mock-dev"})
                 raise

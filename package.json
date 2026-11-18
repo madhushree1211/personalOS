@@ -10,9 +10,7 @@
     "dev": "concurrently \"python -m uvicorn app.main:app --reload --port 4000 --app-dir backend\" \"npm run dev --workspace frontend\"",
     "build": "npm run build --workspace frontend",
     "start": "python -m uvicorn app.main:app --host 0.0.0.0 --port 4000 --app-dir backend",
-    "test": "npm run test:legacy && npm run test:backend",
-    "test:legacy": "node --test backend/**/*.test.js",
-    "test:backend": "cd backend && python -m pytest tests/test_api.py tests/test_routing_phase3.py -q"
+    "test": "cd backend && python -m pytest -q"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"

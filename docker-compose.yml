@@ -6,14 +6,23 @@ services:
       context: ./backend
     ports:
       - "4000:4000"
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 4000"]
     environment:
       PORT: 4000
+      ENV: ${ENV:-development}
       DATABASE_URL: postgresql+psycopg2://personalos:${POSTGRES_PASSWORD}@db:5432/personalos
       DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in your environment}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your environment}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       SEED_DEMO_DATA: "true"
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/api/healthz', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   db:
     image: postgres:16-alpine

@@ -88,8 +88,9 @@ The mock `BrokerGateway` has no network or real-money capability and refuses
 execution unless both policy approval and explicit user approval are present.
 Investment approvals persist explicit `pending_user -> pending_mfa -> approved
 -> executed` (or `rejected`) transitions. MFA is a development-only mock
-boundary (`000000` or the legacy local assertion); no real MFA provider is
-configured. Ownership, permissions, policy, and audit logging remain enforced
+boundary using generated six-digit codes, stored as hashes with expiry and
+failed-attempt lockout; no real MFA provider is configured. Ownership,
+permissions, policy, and audit logging remain enforced
 at the API boundary.
 Routing components live under `backend/app/routing/` and are intentionally
 side-effect free except for the application audit/repository boundary.

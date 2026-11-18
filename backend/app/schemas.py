@@ -71,7 +71,6 @@ class InvestmentProposalRequest(BaseModel):
 
 class InvestmentConfirmRequest(BaseModel):
     approved: bool
-    mfa_verified: bool = False
     proposalId: str | None = None
     symbol: str | None = None
     amount: float | None = Field(default=None, gt=0)

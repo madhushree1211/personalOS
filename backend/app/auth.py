@@ -7,7 +7,6 @@ from .config import get_settings
 from .db import get_db
 from .models import User, RevokedToken
 from .repositories import Repository
-from .services import TOKEN
 
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
@@ -21,12 +20,6 @@ def create_access_token(user: User) -> str:
     return jwt.encode({"sub": user.id, "jti": __import__("uuid").uuid4().hex, "iat": now, "exp": now + timedelta(minutes=settings.access_token_minutes)}, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 def current_user(request: Request, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     token = authorization.removeprefix("Bearer ").strip() if authorization else ""
-    # Preserve the original demo client's placeholder token only in development.
-    # The legacy demo token remains available only for local development so
-    # existing seeded clients continue to work while production requires JWT.
-    if get_settings().environment != "production" and token in {"******", TOKEN}:
-        user = Repository(db).user("demo@personalos.ai")
-        if user: return user
     try:
         data = jwt.decode(token, get_settings().jwt_secret, algorithms=[get_settings().jwt_algorithm])
         user_id = data.get("sub")

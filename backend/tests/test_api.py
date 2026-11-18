@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 os.environ["DATABASE_URL"] = "sqlite:///./test_personalos.db"
 os.environ["SEED_DEMO_DATA"] = "true"
 os.environ["DEMO_PASSWORD"] = "test-demo-password"
+os.environ["ENV"] = "test"
+os.environ["JWT_SECRET"] = "test-jwt-secret-at-least-32-characters"
 
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -11,7 +13,8 @@ from app.auth import hash_password
 from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
-from app.models import AuditEntry, User
+from app.models import AuditEntry, InvestmentApproval, User
+from app.approval import get_test_mfa_code
 
 client = TestClient(app)
 
@@ -75,8 +78,17 @@ def test_investment_proposal_persists_and_validates():
                          json={"proposalId": proposal["id"], "approved": True})
     assert denied.status_code == 403
     assert denied.json()["detail"]["mfa_required"] is True
+    db = SessionLocal()
+    try:
+        approval = db.query(InvestmentApproval).filter_by(proposal_id=proposal["id"]).one()
+        code = get_test_mfa_code(approval.id)
+    finally:
+        db.close()
+    verified = client.post(f"/api/investment/{proposal['id']}/mfa/verify",
+                           headers=auth(token), json={"code": code})
+    assert verified.status_code == 200
     confirmed = client.post("/api/investment/confirm", headers=auth(token),
-                            json={"proposalId": proposal["id"], "approved": True, "mfa_verified": True})
+                            json={"proposalId": proposal["id"], "approved": True})
     assert confirmed.status_code == 200
     assert confirmed.json()["status"] == "sandbox_execute"
 
@@ -89,8 +101,14 @@ def test_approval_state_and_mock_mfa_are_persistent():
                           json={"proposalId": proposal["id"], "approved": True})
     assert waiting.status_code == 403
     assert waiting.json()["detail"]["mfa_required"] is True
+    db = SessionLocal()
+    try:
+        approval = db.query(InvestmentApproval).filter_by(proposal_id=proposal["id"]).one()
+        code = get_test_mfa_code(approval.id)
+    finally:
+        db.close()
     verified = client.post(f"/api/investment/{proposal['id']}/mfa/verify",
-                           headers=auth(token), json={"code": "000000"})
+                           headers=auth(token), json={"code": code})
     assert verified.status_code == 200
     assert verified.json()["proposal"]["approval"]["status"] == "approved"
     executed = client.post("/api/investment/confirm", headers=auth(token),

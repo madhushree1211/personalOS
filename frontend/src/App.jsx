@@ -75,11 +75,22 @@ function App() {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('personalos-token');
-    localStorage.removeItem('personalos-user');
-    setToken('');
-    setUser(null);
+  const logout = async () => {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+    } catch (error) {
+      console.error('Unable to revoke the session', error);
+    } finally {
+      localStorage.removeItem('personalos-token');
+      localStorage.removeItem('personalos-user');
+      setToken('');
+      setUser(null);
+    }
   };
 
   const sendPrompt = async (event) => {

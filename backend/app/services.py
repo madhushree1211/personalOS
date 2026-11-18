@@ -3,7 +3,6 @@ from .models import HealthRecord, Renewal
 from .models import InvestmentApproval, InvestmentProposal
 from .repositories import Repository
 
-TOKEN = "personalos-demo-token"
 BROKER = {"status": "sandbox", "canExecute": False, "lastApprovedBy": None,
           "supported": ["AAPL", "MSFT", "NIFTY50", "RELIANCE", "HDFCBANK"]}
 
