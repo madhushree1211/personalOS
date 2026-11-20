@@ -117,6 +117,13 @@ def test_document_agent_success_and_wrong_owner_at_agent_level() -> None:
                          query="certificate renewal"),
             "read",
         )
+        result_b_own = DocumentAgent().handle(
+            AgentContext(owner_b, {"document.read"}, db, "doc-agent-b-own",
+                         query="beta health record"),
+            "read",
+        )
+        assert result_b_own.data["results"]
+        assert all(item["filename"] == "b.txt" for item in result_b_own.data["results"])
         assert result_a.agent == "Document Agent"
         assert result_a.data["results"]
         assert all(item["filename"] == "a.txt" for item in result_a.data["results"])
