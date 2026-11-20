@@ -1,4 +1,6 @@
 import time
+import hashlib
+from uuid import uuid4
 from datetime import date
 from threading import Lock
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -12,14 +14,20 @@ from .schemas import *
 from .seed import seed
 from .auth import current_user, create_access_token, verify_password, require_permission, revoke_token
 from .services import confirm_proposal, create_proposal, route_request, serialize_health, serialize_proposal, serialize_renewal
-from .models import InvestmentApproval
+from .models import InvestmentApproval, InvestmentProposal
 from .approval import ApprovalState, transition, verify_mfa
 from .routing.supervisor import SupervisorRoutingService
 from .routing.broker import MockBrokerGateway
 from .routing.audit import AuditEvent
 from .routing.contracts import Intent
+from .audit_context import audit_request
 
 settings=get_settings(); app=FastAPI(title="PersonalOS API",version="3.0.0")
+@app.middleware("http")
+async def add_audit_request_id(request: Request, call_next):
+    request_id = str(uuid4())
+    with audit_request(request_id):
+        return await call_next(request)
 supervisor_service = SupervisorRoutingService()
 broker_gateway = MockBrokerGateway()
 cors_options = cors_middleware_options(settings.origins)
@@ -37,6 +45,13 @@ def startup(): Base.metadata.create_all(engine); seed() if settings.seed_demo_da
 def repo(db,user): return Repository(db,user.id if user else None)
 def audit(db,user,event,details=None): Repository(db,user.id if user else None).log(event,details)
 def public_user(u): return {"id":u.id,"name":u.name,"email":u.email,"role":u.role,"permissions":u.permissions or []}
+def audit_cross_user_lookup(db, user, model, resource_id, resource_type, lookup_field="id"):
+    record = db.query(model).filter(getattr(model, lookup_field) == resource_id, model.owner_id != user.id).first()
+    if record:
+        audit(db, user, "cross-user-access-denied", {
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+        })
 @app.get("/api/healthz")
 def healthz(): return {"status":"ok","service":settings.app_name}
 _login_failures: dict[tuple[str, str], list[float]] = {}
@@ -59,15 +74,16 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
         recent = [timestamp for timestamp in _login_failures.get(key, []) if now - timestamp < 60]
         if len(recent) >= 5:
             _login_failures[key] = recent
+            audit(db, None, "login-rate-limited", {"email": username, "ip": _client_ip(request)})
             raise HTTPException(status_code=429, detail="Too many login attempts")
 
-    u = Repository(db).user(payload.email)
+    u = Repository(db).user(username)
     if not u or not verify_password(payload.password, u.password_hash):
         with _login_limiter_lock:
             recent = [timestamp for timestamp in _login_failures.get(key, []) if now - timestamp < 60]
             recent.append(time.monotonic())
             _login_failures[key] = recent
-        audit(db, None, "login-failed", {"email": payload.email})
+        audit(db, None, "login-failed", {"email": username, "ip": _client_ip(request)})
         raise HTTPException(401, "Invalid credentials")
 
     with _login_limiter_lock:
@@ -96,7 +112,9 @@ def update_renewal(item_id,p:RenewalUpdate,db=Depends(get_db),user=Depends(requi
 @app.delete("/api/renewals/{item_id}")
 def delete_renewal(item_id,db=Depends(get_db),user=Depends(require_permission("renewal.delete"))):
     x=db.get(Renewal,item_id)
-    if not x or x.owner_id != user.id: raise HTTPException(404,"Renewal not found")
+    if not x or x.owner_id != user.id:
+        audit_cross_user_lookup(db, user, Renewal, item_id, "renewal")
+        raise HTTPException(404,"Renewal not found")
     result=serialize_renewal(x); db.delete(x); db.commit(); audit(db,user,"renewal-deleted"); return {"deleted":result}
 @app.get("/api/health")
 def list_health(db=Depends(get_db),user=Depends(require_permission("health.read"))): return {"records":[serialize_health(x) for x in repo(db,user).health()]}
@@ -121,6 +139,8 @@ def investment_mfa(proposal_id: str, p: InvestmentMFARequest, db=Depends(get_db)
                    user=Depends(require_permission("investment.confirm"))):
     r = repo(db, user); x = r.proposal(proposal_id); approval = r.approval(proposal_id)
     if not x or not approval:
+        audit_cross_user_lookup(db, user, InvestmentProposal, proposal_id, "investment-proposal")
+        audit_cross_user_lookup(db, user, InvestmentApproval, proposal_id, "investment-approval", "proposal_id")
         raise HTTPException(404, "Investment proposal not found")
     try:
         verify_mfa(approval, user_id=user.id, code=p.code)
@@ -131,12 +151,20 @@ def investment_mfa(proposal_id: str, p: InvestmentMFARequest, db=Depends(get_db)
         raise
     db.commit()
     audit(db, user, "investment-mfa-verified", {"proposalId": proposal_id, "provider": "mock-dev"})
+    audit(db, user, "approval-state-transition", {
+        "proposalId": proposal_id,
+        "from": ApprovalState.PENDING_MFA.value,
+        "to": ApprovalState.APPROVED.value,
+    })
     return {"proposal": serialize_proposal(x, approval)}
 
 @app.post("/api/investment/confirm")
 def investment_confirm(p:InvestmentConfirmRequest,db=Depends(get_db),user=Depends(require_permission("investment.confirm"))):
     r=repo(db,user); x=r.proposal(p.proposalId) if p.proposalId else None
     if not x:
+        if p.proposalId:
+            audit_cross_user_lookup(db, user, InvestmentProposal, p.proposalId, "investment-proposal")
+            audit_cross_user_lookup(db, user, InvestmentApproval, p.proposalId, "investment-approval", "proposal_id")
         if not p.symbol or p.amount is None: raise HTTPException(404,"Investment proposal not found")
         x=create_proposal(r,p.symbol,p.amount,"Medium")
     approval = r.approval(x.id)
@@ -146,6 +174,11 @@ def investment_confirm(p:InvestmentConfirmRequest,db=Depends(get_db),user=Depend
     if p.approved:
         if ApprovalState(approval.status) is ApprovalState.PENDING_USER:
             transition(approval, ApprovalState.PENDING_MFA, user_id=user.id)
+            audit(db, user, "approval-state-transition", {
+                "proposalId": x.id,
+                "from": ApprovalState.PENDING_USER.value,
+                "to": ApprovalState.PENDING_MFA.value,
+            })
         if ApprovalState(approval.status) is ApprovalState.PENDING_MFA and not p.mfa_code:
             db.commit()
             audit(db, user, "investment-approval-awaiting-mfa",
@@ -182,9 +215,19 @@ def investment_confirm(p:InvestmentConfirmRequest,db=Depends(get_db),user=Depend
                               policy=decision.decision, approved=True,
                               mfa_verified=approval.mfa_verified_at is not None)
         transition(approval, ApprovalState.EXECUTED, user_id=user.id)
+        audit(db, user, "approval-state-transition", {
+            "proposalId": x.id,
+            "from": ApprovalState.APPROVED.value,
+            "to": ApprovalState.EXECUTED.value,
+        })
         db.commit()
     else:
         transition(approval, ApprovalState.REJECTED, user_id=user.id)
+        audit(db, user, "approval-state-transition", {
+            "proposalId": x.id,
+            "from": ApprovalState.PENDING_USER.value,
+            "to": ApprovalState.REJECTED.value,
+        })
         db.commit()
     result = serialize_proposal(confirm_proposal(r,x,p.approved,user.name), approval)
     audit(db, user, "investment-confirmation", AuditEvent.create(
@@ -198,17 +241,32 @@ def supervisor(p:RouteRequest,db=Depends(get_db),user=Depends(require_permission
         result=supervisor_service.route(p.query,repo(db,user),user)
     except ValueError as exc:
         audit(db, user, "supervisor-validation-failed",
-              {"query": p.query, "reason": str(exc)})
+              {"query_length": len(p.query), "query_sha256": hashlib.sha256(p.query.encode()).hexdigest(), "reason": str(exc)})
         raise HTTPException(422, str(exc))
     except PermissionError as exc:
         audit(db, user, "supervisor-policy-denied",
-              {"query": p.query, "reason": str(exc)})
+              {"query_length": len(p.query), "query_sha256": hashlib.sha256(p.query.encode()).hexdigest(), "reason": str(exc)})
         raise HTTPException(403, str(exc))
-    audit(db,user,"supervisor-routed",{"query":p.query,"agent":result["agent"],
-                                        "workflow": result.get("workflow"),
-                                        "policy": result.get("policy")})
+    routed_decision = result.get("routing_decision") or {}
+    audit(db,user,"supervisor-routed",{
+        "query_length": len(p.query),
+        "query_sha256": hashlib.sha256(p.query.encode()).hexdigest(),
+        "routing_path": result.get("routing_path"),
+        "fallback_reason": result.get("fallback_reason"),
+        "agent": result["agent"],
+        "capability": routed_decision.get("capability"),
+        "policy_verdict": "allowed" if (result.get("policy") or {}).get("allowed") else "denied",
+        "workflow": result.get("workflow"),
+    })
+    tool_name = "renewal.read" if result.get("workflow") == "renewal" else "health.read" if result.get("workflow") == "health" else None
+    if tool_name:
+        audit(db, user, "agent-tool-call", {"tool": tool_name, "ok": True})
     return result
 @app.get("/api/audit-log")
-def audit_log(db=Depends(get_db),user=Depends(require_permission("audit.read"))):
-    return {"entries":[{"id":x.id,"timestamp":x.timestamp.isoformat(),"event":x.event,"details":x.details} for x in repo(db,user).audit()]}
+def audit_log(limit: int=10, offset: int=0, event: str|None=None,
+              db=Depends(get_db),user=Depends(require_permission("audit.read"))):
+    limit=max(1,min(limit,100))
+    offset=max(0,offset)
+    return {"entries":[{"id":x.id,"timestamp":x.timestamp.isoformat(),"event":x.event,"details":x.details}
+                       for x in repo(db,user).audit(limit=limit,offset=offset,event=event)]}
 from .security.router import router as security_router; app.include_router(security_router)

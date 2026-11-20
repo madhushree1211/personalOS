@@ -16,6 +16,7 @@ class DetectionRule(BaseModel):
     title: str = Field(min_length=1)
     description: str = Field(min_length=1)
     event: str = Field(min_length=1)
+    events: list[str] | None = None
     group_by: Literal["user_id", "ip"]
     threshold: int = Field(gt=0)
     window_seconds: int = Field(gt=0)

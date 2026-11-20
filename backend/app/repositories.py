@@ -18,20 +18,27 @@ class Repository:
     def renewals(self): return list(self.db.scalars(self._owned(Renewal).order_by(Renewal.due_date)))
     def health(self): return list(self.db.scalars(self._owned(HealthRecord).order_by(HealthRecord.date)))
     def holdings(self): return list(self.db.scalars(self._owned(Holding).order_by(Holding.symbol)))
-    def audit(self, limit=10):
+    def audit(self, limit=10, offset=0, event=None):
         query = select(AuditEntry)
         if self.owner_id:
             query = query.where(AuditEntry.user_id == self.owner_id)
         else:
             query = query.where(AuditEntry.user_id.is_(None))
-        return list(self.db.scalars(query.order_by(AuditEntry.timestamp.desc()).limit(limit)))
+        if event:
+            query = query.where(AuditEntry.event == event)
+        return list(self.db.scalars(query.order_by(AuditEntry.timestamp.desc()).offset(offset).limit(limit)))
     def proposal(self, proposal_id): return self.db.scalar(self._owned(InvestmentProposal).where(InvestmentProposal.id == proposal_id))
     def approval(self, proposal_id):
         return self.db.scalar(select(InvestmentApproval).where(
             InvestmentApproval.proposal_id == proposal_id, InvestmentApproval.owner_id == self.owner_id))
     def proposals(self, limit=20): return list(self.db.scalars(self._owned(InvestmentProposal).order_by(InvestmentProposal.id.desc()).limit(limit)))
     def log(self, event, details=None, user_id=None):
-        entry = AuditEntry(event=event, details=details or {}, user_id=user_id or self.owner_id)
+        merged = dict(details or {})
+        from .audit_context import request_id_context
+        request_id = request_id_context.get()
+        if request_id:
+            merged.setdefault("request_id", request_id)
+        entry = AuditEntry(event=event, details=merged, user_id=user_id or self.owner_id)
         self.db.add(entry); self.db.commit(); self.db.refresh(entry); return entry
     def create_document(self, **values):
         document = Document(owner_id=self.owner_id, **values)

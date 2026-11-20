@@ -9,4 +9,4 @@ severity: high
 mitre:
   technique_id: T1111
   technique_name: Multi-Factor Authentication Request Generation
-  note: Closest match, approximate
+  note: closest match, approximate

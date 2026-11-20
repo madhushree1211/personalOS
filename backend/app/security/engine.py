@@ -63,6 +63,8 @@ def evaluate(rules: Iterable[Any], events: Iterable[Any]) -> list[Alert]:
 
     for rule in rules:
         rule_event = getattr(rule, "event", None) if not isinstance(rule, dict) else rule["event"]
+        rule_events = getattr(rule, "events", None) if not isinstance(rule, dict) else rule.get("events")
+        accepted_events = set(rule_events or [rule_event])
         rule_id = getattr(rule, "id", None) if not isinstance(rule, dict) else rule["id"]
         severity = getattr(rule, "severity", None) if not isinstance(rule, dict) else rule["severity"]
         group_by = getattr(rule, "group_by", None) if not isinstance(rule, dict) else rule["group_by"]
@@ -74,7 +76,7 @@ def evaluate(rules: Iterable[Any], events: Iterable[Any]) -> list[Alert]:
         grouped: dict[str, list[Any]] = defaultdict(list)
         for event in event_list:
             event_name = _value(event, "event")
-            if event_name == rule_event:
+            if event_name in accepted_events:
                 grouped[_group_key(event, group_by)].append(event)
 
         for group_key, group_events in grouped.items():

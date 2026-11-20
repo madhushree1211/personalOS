@@ -2,6 +2,9 @@ id: repeated-capability-denials
 title: Repeated capability denials
 description: One user receives repeated capability or permission denials.
 event: permission-denied
+events:
+  - permission-denied
+  - supervisor-policy-denied
 group_by: user_id
 threshold: 5
 window_seconds: 300
@@ -9,4 +12,4 @@ severity: medium
 mitre:
   technique_id: T1548
   technique_name: Abuse Elevation Control Mechanism
-  note: Closest match, approximate
+  note: closest match, approximate

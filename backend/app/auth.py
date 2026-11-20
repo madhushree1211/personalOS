@@ -40,7 +40,11 @@ def require_permission(permission: str):
                "investment.confirm": {"investment.confirm", "investment:confirm", "investment.execute"}}
     def dependency(request: Request, db: Session = Depends(get_db), user=Depends(current_user)):
         if not (set(user.permissions or []) & aliases.get(permission, {permission})):
-            Repository(db, user.id).log("permission-denied", {"path": request.url.path, "permission": permission})
+            Repository(db, user.id).log("permission-denied", {
+                "capability": permission,
+                "route": request.url.path,
+                "method": request.method,
+            })
             raise HTTPException(403, "Permission denied")
         return user
     return dependency
