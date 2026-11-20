@@ -181,3 +181,6 @@ The API uses short-lived JWT bearer tokens and Argon2 password hashes (with bcry
 - The renewal "manage" action and the health "analysis" action only read data.
 - Agents call repositories directly, not through MCP. The MCP adapters, transport and registry are tested but off the live path.
 - Existing databases need re-seeding to receive the document.read and document.create capabilities.
+## Known limitations
+
+- Login rate limiting is in-memory and per-process; it resets when the server restarts. It is not production-grade.
