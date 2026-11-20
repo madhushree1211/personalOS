@@ -143,6 +143,8 @@ Document permissions `document.read` and `document.create` are granted only to N
 
 ## Phase 7 — MCP Server Transport
 
+> Status: this describes the protocol layer, which is tested but is NOT on the live request path. Agents call owner-scoped repositories after a capability check.
+
 The MCP servers provide a real protocol transport boundary for deterministic,
 read-only capabilities. They receive an already-authorized context from the
 PersonalOS MCP boundary and do not inspect JWTs, authenticate users, approve
@@ -169,3 +171,13 @@ stdio transport; no external service or credential is connected.
 
 ## Authentication
 The API uses short-lived JWT bearer tokens and Argon2 password hashes (with bcrypt verification for staged migrations). Protected resources are isolated by owner ID and permissions are enforced at route boundaries. Permissions use granular dotted names such as `renewal.read`, `renewal.create`, `renewal.update`, `renewal.delete`, `investment.propose`, and `investment.confirm`; there is no administrator bypass for financial actions. Set a strong JWT_SECRET and run `alembic upgrade head` in backend before production deployment. Logout revokes the current JWT and security failures are audited.
+
+## Known limitations
+
+- Login rate limiting is in-memory and per-process; it resets when the server restarts. It is not production-grade.
+- Failed logins for unknown users have no owner, so they do not appear in the owner-scoped /api/audit-log. They are visible only through `python -m app.security.run`.
+- Document search is lexical TF-IDF, not semantic. The Qdrant class is a stub and is NOT IMPLEMENTED.
+- Finance proposals are a fixed demo stub (HDFCBANK, 10000); the query is not parsed. Responses are labelled demo: true. There is no execute tool.
+- The renewal "manage" action and the health "analysis" action only read data.
+- Agents call repositories directly, not through MCP. The MCP adapters, transport and registry are tested but off the live path.
+- Existing databases need re-seeding to receive the document.read and document.create capabilities.
