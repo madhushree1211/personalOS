@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from .config import cors_middleware_options, get_settings
 from .db import Base, engine, get_db
-from .models import HealthRecord, Renewal
+from .models import HealthRecord, Renewal, Document
 from .repositories import Repository
 from .schemas import *
 from .seed import seed
@@ -21,6 +21,9 @@ from .routing.broker import MockBrokerGateway
 from .routing.audit import AuditEvent
 from .routing.contracts import Intent
 from .audit_context import audit_request
+from .documents.chunking import chunk_text
+from .documents.contracts import DocumentType
+from .documents.tfidf import lexical_tfidf_search
 
 settings=get_settings(); app=FastAPI(title="PersonalOS API",version="3.0.0")
 @app.middleware("http")
@@ -262,6 +265,84 @@ def supervisor(p:RouteRequest,db=Depends(get_db),user=Depends(require_permission
     if tool_name:
         audit(db, user, "agent-tool-call", {"tool": tool_name, "ok": True})
     return result
+
+@app.post("/api/documents")
+def ingest_document(payload: DocumentUpload, db=Depends(get_db),
+                    user=Depends(require_permission("document.create"))):
+    text_bytes = payload.text.encode("utf-8")
+    if len(text_bytes) > 200 * 1024:
+        raise HTTPException(413, "Document exceeds 200 KB")
+    document = Document(
+        owner_id=user.id,
+        filename=payload.filename,
+        document_type="general",
+        content_type="text/plain",
+        status="ingested",
+        source="upload",
+        metadata_json={},
+    )
+    db.add(document)
+    db.flush()
+    chunks = chunk_text(
+        payload.text,
+        document_id=document.id,
+        owner_id=user.id,
+        filename=payload.filename,
+        document_type=DocumentType.GENERAL,
+        chunk_size=800,
+        overlap=100,
+    )
+    document.metadata_json = {
+        "chunks": [{"chunk_id": chunk.chunk_id, "text": chunk.text} for chunk in chunks]
+    }
+    db.commit()
+    db.refresh(document)
+    audit(db, user, "document-ingested", {
+        "text_length": len(payload.text),
+        "sha256": hashlib.sha256(text_bytes).hexdigest(),
+        "chunk_count": len(chunks),
+    })
+    return {"document": {
+        "id": document.id,
+        "filename": document.filename,
+        "chunk_count": len(chunks),
+    }}
+
+@app.get("/api/documents/search")
+def search_documents(q: str, limit: int=5, db=Depends(get_db),
+                     user=Depends(require_permission("document.read"))):
+    limit = max(1, min(limit, 20))
+    repository = repo(db, user)
+    chunks: list[dict] = []
+    for document in repository.documents(limit=1000):
+        for chunk in (document.metadata_json or {}).get("chunks", []):
+            chunks.append({
+                "document_id": document.id,
+                "filename": document.filename,
+                "chunk_id": chunk["chunk_id"],
+                "text": chunk["text"],
+            })
+    results = lexical_tfidf_search(q, chunks, limit)
+    audit(db, user, "document-searched", {
+        "query_length": len(q),
+        "query_sha256": hashlib.sha256(q.encode("utf-8")).hexdigest(),
+        "result_count": len(results),
+    })
+    return {"results": results}
+
+@app.get("/api/documents/{document_id}")
+def get_document(document_id: str, db=Depends(get_db),
+                 user=Depends(require_permission("document.read"))):
+    document = repo(db, user).document(document_id)
+    if not document:
+        audit_cross_user_lookup(db, user, Document, document_id, "document")
+        raise HTTPException(404, "Document not found")
+    return {"document": {
+        "id": document.id,
+        "filename": document.filename,
+        "document_type": document.document_type,
+        "status": document.status,
+    }}
 @app.get("/api/audit-log")
 def audit_log(limit: int=10, offset: int=0, event: str|None=None,
               db=Depends(get_db),user=Depends(require_permission("audit.read"))):

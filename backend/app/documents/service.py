@@ -46,6 +46,13 @@ class DocumentService:
         for chunk in chunks:
             chunk.embedding = self.embedding_provider.embed(chunk.text)
         self.vector_store.upsert(chunks)
+        stored_metadata = dict(document.metadata_json or {})
+        stored_metadata["chunks"] = [
+            {"chunk_id": chunk.chunk_id, "text": chunk.text}
+            for chunk in chunks
+        ]
+        document.metadata_json = stored_metadata
+        self.repository.repository.db.commit()
         return DocumentRecord(
             document_id=document.id,
             owner_id=document.owner_id,

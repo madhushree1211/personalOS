@@ -78,3 +78,8 @@ class InvestmentConfirmRequest(BaseModel):
 
 class InvestmentMFARequest(BaseModel):
     code: str = Field(min_length=6, max_length=6)
+
+
+class DocumentUpload(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    text: str = Field(min_length=1)

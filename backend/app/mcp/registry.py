@@ -50,15 +50,26 @@ class MCPRegistry:
 
 
 def _renewal_read(payload: dict[str, Any]) -> dict[str, Any]:
-    return {"kind": "renewal.read", "query": payload.get("query", "")}
+    from ..mcp.adapters.renewal import RenewalMCPAdapter
+    repository = payload.get("repository")
+    if repository is None:
+        return {"kind": "renewal.read", "renewals": []}
+    context = payload.get("context")
+    return RenewalMCPAdapter(repository).read(payload.get("query", ""), context)
 
 
 def _health_read(payload: dict[str, Any]) -> dict[str, Any]:
-    return {"kind": "health.read", "metric": payload.get("metric")}
+    from ..mcp.adapters.health import HealthMCPAdapter
+    repository = payload.get("repository")
+    if repository is None:
+        return {"kind": "health.read", "records": []}
+    context = payload.get("context")
+    return HealthMCPAdapter(repository).read(payload.get("metric", ""), context)
 
 
 def _market_read(payload: dict[str, Any]) -> dict[str, Any]:
-    return {"kind": "market.read", "symbol": payload.get("symbol")}
+    return {"kind": "market.read", "symbol": payload.get("symbol"),
+            "source": "demo data"}
 
 
 def default_mcp_registry() -> MCPRegistry:

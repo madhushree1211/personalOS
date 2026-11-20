@@ -76,7 +76,7 @@ class InMemoryVectorStore:
 
 
 class QdrantVectorStore:
-    """Optional adapter boundary; importing qdrant is deferred until construction."""
+    """NOT IMPLEMENTED optional adapter boundary; importing qdrant is deferred until construction."""
 
     def __init__(self, collection_name: str, url: str, embedding_provider: EmbeddingProvider):
         try:

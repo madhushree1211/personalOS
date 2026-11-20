@@ -25,7 +25,9 @@ Every audit entry includes `request_id` when it is created in an HTTP request.
 | `supervisor-validation-failed` | `backend/app/main.py` | `query_length`, `query_sha256`, `reason`, `request_id` |
 | `supervisor-policy-denied` | `backend/app/main.py` | `query_length`, `query_sha256`, `reason`, `request_id` |
 | `supervisor-routed` | `backend/app/main.py` | `query_length`, `query_sha256`, `routing_path`, `fallback_reason`, `agent`, `capability`, `policy_verdict`, `workflow`, `request_id` |
-| `agent-tool-call` | `backend/app/main.py` | `tool`, `ok`, `request_id` |
+| `document-ingested` | `backend/app/main.py` | `text_length`, `sha256`, `chunk_count`, `request_id` |
+| `document-searched` | `backend/app/main.py` and `backend/app/agents/document.py` | `query_length`, `query_sha256`, `result_count`, `request_id` |
+| `agent-tool-call` | `backend/app/agents/base.py` | `tool`, `ok`, `request_id` |
 
 ## Detection rule event mapping
 

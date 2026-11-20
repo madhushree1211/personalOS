@@ -45,9 +45,9 @@ PersonalOS is a permission-aware personal life, health, and finance supervisor b
 - Financial transactions are simulated and require explicit approval.
 - No real banking or brokerage credentials are used.
 
-## Document Intelligence and RAG foundation
+## Document retrieval
 
-The deterministic Phase 6 document path is:
+The deterministic document retrieval path is:
 
 ```text
 Document
@@ -56,24 +56,28 @@ Extraction
     ↓
 Cleaning
     ↓
-Chunking
+Chunking (800 characters with 100-character overlap)
     ↓
-Embedding
+Owner-scoped storage in existing document metadata
     ↓
-Qdrant
-    ↓
-Retrieval
+Lexical (TF-IDF) retrieval
     ↓
 Agent
 ```
 
-PostgreSQL stores document metadata and ownership. Qdrant is the optional
-vector-store adapter for semantic chunks and vectors; normal tests use an
-in-memory store. Ownership filtering is mandatory during retrieval and is
-enforced in application/vector-store code. Current extraction, embeddings, and
-retrieval are deterministic/mock implementations with no external document,
-embedding, or LLM provider connected. OCR, cloud storage, background workers,
-and frontend document UI are intentionally out of scope.
+PostgreSQL stores document metadata, ownership, and chunk text. Lexical
+(TF-IDF) retrieval searches only the requesting user's chunks. The Qdrant
+stub is marked NOT IMPLEMENTED. OCR, cloud storage, background workers, and
+frontend document UI are outside the current scope.
+
+## Agents
+
+The supervisor dispatches real in-process agents for renewal, health, finance,
+and document workflows. Agents re-check capabilities before invoking tools.
+Renewal and health agents read owner-scoped repository data. The finance agent
+provides read-only demo portfolio analysis or creates a pending-user investment
+proposal; it has no execute tool or broker access. The document agent performs
+lexical (TF-IDF) retrieval only over the caller's stored chunks.
 
 ## Backend
 
@@ -127,9 +131,15 @@ External Tool
 decides whether an operation is permitted.** The MCP client only resolves
 explicitly registered tools and accepts an already-approved policy context; it
 does not replace authentication, authorization, ownership, approval, or MFA
-checks. Only synthetic read-only renewal, health, and market tools are
-registered currently. Financial execution remains mock/sandbox-only and is not
-registered as an MCP tool.
+checks. Market data remains explicitly labeled demo data. Financial
+execution remains mock/sandbox-only and is not registered as an MCP tool.
+
+The `mcp_servers/*` directories are protocol demonstrations; they are separate
+from the real in-process agents.
+
+Agents call owner-scoped repositories after a capability check. The MCP adapters, transport and registry are a separate, tested protocol layer that is not on the live request path.
+
+Document permissions `document.read` and `document.create` are granted only to NEW databases by `backend/app/seed.py`. Existing databases need re-seeding.
 
 ## Phase 7 — MCP Server Transport
 

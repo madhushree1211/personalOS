@@ -6,6 +6,12 @@ from .contracts import AgentName, Capability, Intent
 from ..agents.classifier import InvalidRoutingOutput, RoutingDecision as LLMRoutingDecision, classify
 from ..agents.llm import get_llm_client
 from ..config import get_settings
+from ..agents.base import AgentContext
+from ..agents.renewal import RenewalAgent
+from ..agents.health import HealthAgent
+from ..agents.finance import FinanceAgent
+from ..agents.document import DocumentAgent
+from ..db import SessionLocal
 
 
 _LLM_CAPABILITY_ROUTES = {
@@ -65,85 +71,76 @@ class SupervisorRoutingService:
                                          request_id=request_id)
         if not decision.allowed:
             raise PermissionError(decision.reason)
-        if validated.workflow is Intent.RENEWAL_QUERY:
-            from ..mcp.adapters.renewal import RenewalMCPAdapter
-            from ..mcp.client import MCPClient
-            from ..mcp.contracts import (
-                MCPAuthorizationContext,
-                MCPInvocationRequest,
-                MCPToolIdentity,
+        repo_db = getattr(repo, "db", None)
+        own_session = repo_db is None
+        ctx_db = repo_db or SessionLocal()
+        try:
+            ctx = AgentContext(
+                user_id=user.id,
+                permissions=set(user.permissions or []),
+                db=ctx_db,
+                request_id=request_id,
+                query=validated.normalized_query,
             )
-            from ..mcp.transport import RenewalMCPTransport
-
-            renewal_client = MCPClient(
-                transport=RenewalMCPTransport(RenewalMCPAdapter(repo))
-            )
-            renewal_result = renewal_client.invoke(
-                MCPInvocationRequest(
-                    request_id=request_id,
-                    identity=MCPToolIdentity(
-                        server_name="personalos-safe-mock",
-                        tool_name="renewal.read",
-                    ),
-                    capability=Capability.RENEWAL_READ,
-                    authenticated_user_id=user.id,
-                    agent=AgentName.RENEWAL_SHORT,
-                    input={"query": validated.normalized_query},
-                ),
-                MCPAuthorizationContext(
-                    user_id=user.id,
-                    agent=AgentName.RENEWAL_SHORT,
-                    policy_decision=decision,
-                ),
-            )
-            renewals = renewal_result.data["renewals"]
-            result = {
-                "agent": "Renewal Agent",
-                "workflow": "renewal",
-                "requiresHumanApproval": False,
-                "response": f"I found {len(renewals)} items that may need attention.",
-                "data": {"renewals": renewals},
-            }
-        elif validated.workflow is Intent.HEALTH_QUERY:
-            from ..mcp.adapters.health import HealthMCPAdapter
-            from ..mcp.client import MCPClient
-            from ..mcp.contracts import (
-                MCPAuthorizationContext,
-                MCPInvocationRequest,
-                MCPToolIdentity,
-            )
-            from ..mcp.transport import HealthMCPTransport
-
-            health_client = MCPClient(
-                transport=HealthMCPTransport(HealthMCPAdapter(repo))
-            )
-            health_result = health_client.invoke(
-                MCPInvocationRequest(
-                    request_id=request_id,
-                    identity=MCPToolIdentity(
-                        server_name="personalos-safe-mock",
-                        tool_name="health.read",
-                    ),
-                    capability=Capability.HEALTH_READ,
-                    authenticated_user_id=user.id,
-                    agent=AgentName.HEALTH_SHORT,
-                    input={"metric": ""},
-                ),
-                MCPAuthorizationContext(
-                    user_id=user.id,
-                    agent=AgentName.HEALTH_SHORT,
-                    policy_decision=decision,
-                ),
-            )
-            result = {
-                "agent": "Health Agent",
-                "workflow": "health",
-                "requiresHumanApproval": False,
-                "response": "Health records retrieved with privacy safeguards.",
-                "data": {"rawData": health_result.data["records"]},
-            }
-        else:
-            result = route_request(validated.normalized_query, repo)
+            if validated.workflow in (Intent.RENEWAL_QUERY, Intent.RENEWAL_MANAGEMENT):
+                agent_result = RenewalAgent().handle(
+                    ctx,
+                    "manage" if validated.workflow is Intent.RENEWAL_MANAGEMENT else "read",
+                )
+                result = {
+                    "agent": agent_result.agent,
+                    "workflow": "renewal",
+                    "requiresHumanApproval": agent_result.requires_approval,
+                    "response": agent_result.answer,
+                    "data": agent_result.data,
+                    "tool_calls": agent_result.tool_calls,
+                }
+            elif validated.workflow in (Intent.HEALTH_QUERY, Intent.HEALTH_ANALYSIS):
+                agent_result = HealthAgent().handle(ctx, "analysis" if validated.workflow is Intent.HEALTH_ANALYSIS else "read")
+                result = {
+                    "agent": agent_result.agent,
+                    "workflow": "health",
+                    "requiresHumanApproval": agent_result.requires_approval,
+                    "response": agent_result.answer,
+                    "data": agent_result.data,
+                    "tool_calls": agent_result.tool_calls,
+                }
+            elif validated.workflow in (Intent.STOCK_ANALYSIS, Intent.PORTFOLIO_ANALYSIS):
+                agent_result = FinanceAgent().handle(ctx, "read")
+                result = {
+                    "agent": agent_result.agent,
+                    "workflow": "finance",
+                    "requiresHumanApproval": agent_result.requires_approval,
+                    "response": agent_result.answer,
+                    "data": agent_result.data,
+                    "tool_calls": agent_result.tool_calls,
+                }
+            elif validated.workflow is Intent.INVESTMENT_PROPOSAL:
+                agent_result = FinanceAgent().handle(ctx, "propose")
+                result = {
+                    "agent": agent_result.agent,
+                    "workflow": "investment",
+                    "requiresHumanApproval": agent_result.requires_approval,
+                    "response": agent_result.answer,
+                    "data": agent_result.data,
+                    "tool_calls": agent_result.tool_calls,
+                }
+            elif validated.workflow is Intent.DOCUMENT_SEARCH:
+                agent_result = DocumentAgent().handle(ctx, "read")
+                result = {
+                    "agent": agent_result.agent,
+                    "workflow": "document",
+                    "requiresHumanApproval": agent_result.requires_approval,
+                    "response": agent_result.answer,
+                    "data": agent_result.data,
+                    "tool_calls": agent_result.tool_calls,
+                }
+            else:
+                result = route_request(validated.normalized_query, repo)
+                result["tool_calls"] = []
+        finally:
+            if own_session:
+                ctx_db.close()
         typed = self.validator.validate_decision(decision.decision)
         # Preserve the legacy response contract while exposing deterministic policy metadata.
         result["policy"] = {"allowed": decision.allowed, "approval": decision.approval.value,
