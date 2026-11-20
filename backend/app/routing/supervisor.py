@@ -48,9 +48,7 @@ class SupervisorRoutingService:
         self.policy = policy or PolicyEngine()
         self.llm_client = get_llm_client(get_settings()) if llm_client is None else llm_client
 
-    def route(self, query: str, repo, user) -> dict:
-        import uuid
-        request_id = str(uuid.uuid4())
+    def decide(self, query: str, request_id: str):
         llm_decision, fallback_reason = _llm_route(query, self.llm_client)
         if llm_decision is not None:
             workflow, capability = _LLM_CAPABILITY_ROUTES[(llm_decision.agent, llm_decision.action)]
@@ -66,6 +64,12 @@ class SupervisorRoutingService:
             validated = self.validator.validate(query, request_id)
             capability = None
             routing_path = "fallback"
+        return validated, capability, routing_path, fallback_reason
+
+    def route(self, query: str, repo, user) -> dict:
+        import uuid
+        request_id = str(uuid.uuid4())
+        validated, capability, routing_path, fallback_reason = self.decide(query, request_id)
         decision = self.policy.evaluate(validated.workflow, set(user.permissions or []),
                                          user=user, ownership_verified=bool(repo.owner_id),
                                          request_id=request_id)
