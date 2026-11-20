@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     access_token_minutes: int = 30
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "personalos_documents"
+    llm_provider: str = "none"
+    llm_api_key: str | None = None
+    llm_model: str = "gemini-2.0-flash"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")

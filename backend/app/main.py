@@ -211,3 +211,4 @@ def supervisor(p:RouteRequest,db=Depends(get_db),user=Depends(require_permission
 @app.get("/api/audit-log")
 def audit_log(db=Depends(get_db),user=Depends(require_permission("audit.read"))):
     return {"entries":[{"id":x.id,"timestamp":x.timestamp.isoformat(),"event":x.event,"details":x.details} for x in repo(db,user).audit()]}
+from .security.router import router as security_router; app.include_router(security_router)

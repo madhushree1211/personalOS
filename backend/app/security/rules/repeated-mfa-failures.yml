@@ -1,0 +1,12 @@
+id: repeated-mfa-failures
+title: Repeated MFA failures
+description: One user repeatedly fails MFA verification.
+event: investment-mfa-failed
+group_by: user_id
+threshold: 3
+window_seconds: 300
+severity: high
+mitre:
+  technique_id: T1111
+  technique_name: Multi-Factor Authentication Request Generation
+  note: Closest match, approximate

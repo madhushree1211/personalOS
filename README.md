@@ -97,6 +97,14 @@ side-effect free except for the application audit/repository boundary.
 LangGraph is not installed or used. MCP is now present only as a foundation;
 external integrations remain future work.
 
+## LLM routing
+
+The supervisor can optionally use a REST-based Gemini or OpenAI client to
+classify requests into a fixed agent/action schema. The Policy Engine still
+selects and authorizes capabilities server-side; the LLM cannot grant
+capabilities or execute operations. Set `LLM_PROVIDER=none` to use only the
+existing keyword router.
+
 ## MCP integration boundary
 
 The current integration path is:
