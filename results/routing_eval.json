@@ -1,0 +1,236 @@
+{
+  "generated_at": "2026-11-21T16:17:28.311911+00:00",
+  "mode": "keyword_only",
+  "provider": null,
+  "model": null,
+  "cases_file": "data\\routing_eval.jsonl",
+  "cases_sha256": "6fa5f6d9d71238fcd3fd24ba60d4b9224372386a9f9dc0856d187161ec06fe6c",
+  "n_cases": 36,
+  "category_counts": {
+    "normal": 16,
+    "ambiguous": 8,
+    "multi_intent": 6,
+    "adversarial": 6
+  },
+  "expected_label_counts": {
+    "renewal": 9,
+    "health": 8,
+    "finance": 7,
+    "document": 8,
+    "unknown": 4
+  },
+  "keyword": {
+    "n_scored": 36,
+    "n_correct": 15,
+    "accuracy": 0.4166666666666667,
+    "accuracy_by_category": {
+      "normal": 0.375,
+      "ambiguous": 0.375,
+      "multi_intent": 0.0,
+      "adversarial": 1.0
+    },
+    "confusion": {
+      "renewal": {
+        "renewal": 4,
+        "health": 0,
+        "finance": 0,
+        "document": 1,
+        "unknown": 4,
+        "error": 0,
+        "rejected": 0
+      },
+      "health": {
+        "renewal": 2,
+        "health": 2,
+        "finance": 1,
+        "document": 0,
+        "unknown": 3,
+        "error": 0,
+        "rejected": 0
+      },
+      "finance": {
+        "renewal": 0,
+        "health": 1,
+        "finance": 3,
+        "document": 0,
+        "unknown": 3,
+        "error": 0,
+        "rejected": 0
+      },
+      "document": {
+        "renewal": 2,
+        "health": 0,
+        "finance": 1,
+        "document": 2,
+        "unknown": 3,
+        "error": 0,
+        "rejected": 0
+      },
+      "unknown": {
+        "renewal": 0,
+        "health": 0,
+        "finance": 0,
+        "document": 0,
+        "unknown": 4,
+        "error": 0,
+        "rejected": 0
+      }
+    },
+    "misrouted": [
+      {
+        "id": 1,
+        "query": "what's coming due next month?",
+        "category": "normal",
+        "expected": "renewal",
+        "predicted": "unknown"
+      },
+      {
+        "id": 3,
+        "query": "should i review my shares before the exam break",
+        "category": "normal",
+        "expected": "finance",
+        "predicted": "unknown"
+      },
+      {
+        "id": 4,
+        "query": "find the notes i uploaded for lab three",
+        "category": "normal",
+        "expected": "document",
+        "predicted": "unknown"
+      },
+      {
+        "id": 5,
+        "query": "did i move enough this week?",
+        "category": "normal",
+        "expected": "health",
+        "predicted": "unknown"
+      },
+      {
+        "id": 9,
+        "query": "am I walking farther than last month?",
+        "category": "normal",
+        "expected": "health",
+        "predicted": "unknown"
+      },
+      {
+        "id": 11,
+        "query": "do i have better options than keeping this balance in cash",
+        "category": "normal",
+        "expected": "finance",
+        "predicted": "unknown"
+      },
+      {
+        "id": 12,
+        "query": "show me the certificate from last semester",
+        "category": "normal",
+        "expected": "document",
+        "predicted": "renewal"
+      },
+      {
+        "id": 13,
+        "query": "can u compare my resting pulse over 7 days?",
+        "category": "normal",
+        "expected": "health",
+        "predicted": "finance"
+      },
+      {
+        "id": 15,
+        "query": "list the gains and losses on my paper trading list",
+        "category": "normal",
+        "expected": "finance",
+        "predicted": "unknown"
+      },
+      {
+        "id": 16,
+        "query": "pull up the class reading saved in my uploads",
+        "category": "normal",
+        "expected": "document",
+        "predicted": "unknown"
+      },
+      {
+        "id": 17,
+        "query": "can you help me review my coverage and monthly costs?",
+        "category": "ambiguous",
+        "expected": "renewal",
+        "predicted": "unknown"
+      },
+      {
+        "id": 18,
+        "query": "is my routine improving or is it only noise?",
+        "category": "ambiguous",
+        "expected": "health",
+        "predicted": "unknown"
+      },
+      {
+        "id": 19,
+        "query": "show the latest numbers and remind me if anything expires",
+        "category": "ambiguous",
+        "expected": "renewal",
+        "predicted": "unknown"
+      },
+      {
+        "id": 20,
+        "query": "summarize my saved material and the money it mentions",
+        "category": "ambiguous",
+        "expected": "document",
+        "predicted": "finance"
+      },
+      {
+        "id": 22,
+        "query": "remind me about the next date and keep a copy",
+        "category": "ambiguous",
+        "expected": "renewal",
+        "predicted": "unknown"
+      },
+      {
+        "id": 25,
+        "query": "tell me how much I walked and list my upcoming renewals",
+        "category": "multi_intent",
+        "expected": "health",
+        "predicted": "renewal"
+      },
+      {
+        "id": 26,
+        "query": "search my uploaded budget sheet, then show my holdings",
+        "category": "multi_intent",
+        "expected": "document",
+        "predicted": "unknown"
+      },
+      {
+        "id": 27,
+        "query": "compare my sleep trend and the cost of my subscriptions",
+        "category": "multi_intent",
+        "expected": "health",
+        "predicted": "renewal"
+      },
+      {
+        "id": 28,
+        "query": "find the fitness certificate and explain my latest heart readings",
+        "category": "multi_intent",
+        "expected": "document",
+        "predicted": "renewal"
+      },
+      {
+        "id": 29,
+        "query": "remind me about insurance dates and search for the policy file",
+        "category": "multi_intent",
+        "expected": "renewal",
+        "predicted": "document"
+      },
+      {
+        "id": 30,
+        "query": "review market positions and tell me whether my steps improved",
+        "category": "multi_intent",
+        "expected": "finance",
+        "predicted": "health"
+      }
+    ],
+    "rejected": []
+  },
+  "llm_classifier": {
+    "status": "not_run"
+  },
+  "supervisor": {
+    "status": "not_run"
+  }
+}
