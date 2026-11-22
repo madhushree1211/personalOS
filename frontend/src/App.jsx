@@ -1,300 +1,345 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  BrowserRouter,
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useNavigate,
+} from 'react-router-dom';
+import { apiFetch, clearSession, setToken, getToken } from './api';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
-const defaultPrompt = 'What needs renewal this month?';
-
-function App() {
-  const [token, setToken] = useState(localStorage.getItem('personalos-token') || '');
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem('personalos-user') || 'null'));
-  const [form, setForm] = useState({ email: 'demo@personalos.ai', password: '' });
-  const [dashboard, setDashboard] = useState({ renewals: [], health: [], stock: { portfolio: [], totalValue: 0 }, audit: [] });
-  const [query, setQuery] = useState(defaultPrompt);
-  const [response, setResponse] = useState({ agent: '', response: '', data: {} });
-  const [loading, setLoading] = useState(false);
-
-  const headers = useMemo(
-    () => ({
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    }),
-    [token]
-  );
-
-  useEffect(() => {
-    if (!token) return;
-    localStorage.setItem('personalos-token', token);
-    const loadData = async () => {
-      try {
-        const [renewals, health, stock, audit] = await Promise.all([
-          fetch(`${API_BASE}/api/renewals`, { headers }),
-          fetch(`${API_BASE}/api/health`, { headers }),
-          fetch(`${API_BASE}/api/stock/summary`, { headers }),
-          fetch(`${API_BASE}/api/audit-log`, { headers })
-        ]);
-        if ([renewals, health, stock, audit].some((res) => res.status === 401)) {
-          logout();
-          return;
-        }
-        const [renewalData, healthData, stockData, auditData] = await Promise.all(
-          [renewals, health, stock, audit].map((res) => res.json())
-        );
-
-        setDashboard({
-          renewals: renewalData.renewals || [],
-          health: healthData.records || [],
-          stock: stockData || { portfolio: [], totalValue: 0 },
-          audit: auditData.entries || []
-        });
-      } catch (error) {
-        console.error('Unable to load dashboard', error);
-      }
-    };
-
-    loadData();
-  }, [token, headers]);
-
-  const login = async (event) => {
-    event.preventDefault();
+function AuthProvider({ children }) {
+  const [user, setUser] = useState(() => {
     try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(form)
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.error || 'Login failed');
-
-      localStorage.setItem('personalos-token', data.token);
-      localStorage.setItem('personalos-user', JSON.stringify(data.user));
-      setToken(data.token);
-      setUser(data.user);
-    } catch (error) {
-      alert(error.message);
+      return JSON.parse(sessionStorage.getItem('personalos.user') || 'null');
+    } catch {
+      return null;
     }
-  };
+  });
+  const authenticated = Boolean(getToken() && user);
+  const value = { user, authenticated, setUser };
+  return children(value);
+}
 
+function Protected({ authenticated, children }) {
+  return authenticated ? children : <Navigate to="/login" replace />;
+}
+
+function Layout({ user, children }) {
+  const navigate = useNavigate();
   const logout = async () => {
     try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
-        method: 'POST',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-    } catch (error) {
-      console.error('Unable to revoke the session', error);
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Clear the local session even if revocation is unavailable.
     } finally {
-      localStorage.removeItem('personalos-token');
-      localStorage.removeItem('personalos-user');
-      setToken('');
-      setUser(null);
+      clearSession();
+      navigate('/login');
     }
   };
-
-  const sendPrompt = async (event) => {
-    event.preventDefault();
-    if (!query.trim()) return;
-    setLoading(true);
-
-    try {
-      const res = await fetch(`${API_BASE}/api/supervisor/route`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query })
-      });
-
-      const data = await res.json();
-      if (res.status === 401) { logout(); return; }
-      setResponse(data);
-    } catch (error) {
-      setResponse({ agent: 'Error', response: 'Unable to reach the supervisor.' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const recentRenewals = dashboard.renewals.slice(0, 3);
-  const avgSleep = useMemo(() => {
-    const sleep = dashboard.health.filter((item) => item.metric === 'sleep');
-    if (!sleep.length) return 0;
-    return sleep.reduce((total, item) => total + Number(item.value), 0) / sleep.length;
-  }, [dashboard.health]);
-
-  if (!user || !token) {
-    return (
-      <div className="auth-shell">
-        <div className="auth-card">
-          <div className="brand-row">
-            <div className="brand-mark">P</div>
-            <div>
-              <p className="eyebrow">Permission-aware supervisor</p>
-              <h1>PersonalOS</h1>
-            </div>
-          </div>
-
-          <form onSubmit={login} className="auth-form">
-            <label>
-              Email
-              <input
-                type="email"
-                value={form.email}
-                onChange={(event) => setForm({ ...form, email: event.target.value })}
-              />
-            </label>
-
-            <label>
-              Password
-              <input
-                type="password"
-                value={form.password}
-                onChange={(event) => setForm({ ...form, password: event.target.value })}
-              />
-            </label>
-
-            <button type="submit">Access dashboard</button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Supervisor</p>
-          <h2>PersonalOS Console</h2>
-        </div>
-
-        <div className="topbar-user">
-          <span>{user.name}</span>
-          <button onClick={logout}>Log out</button>
-        </div>
+        <strong>PersonalOS</strong>
+        <nav>
+          <NavLink to="/chat">Chat</NavLink>
+          <NavLink to="/approvals">Approvals</NavLink>
+          <NavLink to="/audit">Audit</NavLink>
+          <NavLink to="/alerts">Alerts</NavLink>
+          <NavLink to="/documents">Documents</NavLink>
+        </nav>
+        <div><span>{user?.name}</span><button onClick={logout}>Logout</button></div>
       </header>
-
-      <main className="dashboard-layout">
-        <section className="metrics-grid">
-          <article className="metric-card accent">
-            <span className="label">Renewal watchlist</span>
-            <strong>{recentRenewals.length}</strong>
-            <small>Priority items</small>
-          </article>
-
-          <article className="metric-card accent-alt">
-            <span className="label">Health trend</span>
-            <strong>{avgSleep.toFixed(1)}h</strong>
-            <small>Average sleep</small>
-          </article>
-
-          <article className="metric-card accent-dark">
-            <span className="label">Portfolio value</span>
-            <strong>₹{Number(dashboard.stock.totalValue || 0).toLocaleString('en-IN')}</strong>
-            <small>Read-only analysis</small>
-          </article>
-
-          <article className="metric-card warning">
-            <span className="label">Approval engine</span>
-            <strong>Policy</strong>
-            <small>Human review</small>
-          </article>
-        </section>
-
-        <section className="panel-grid">
-          <div className="panel">
-            <div className="panel-header">
-              <h3>Renewal agent</h3>
-              <span className="pill success">Live</span>
-            </div>
-            <ul className="item-list">
-              {recentRenewals.map((item) => (
-                <li key={item.id}>
-                  <div>
-                    <strong>{item.name}</strong>
-                    <small>{item.category}</small>
-                  </div>
-                  <span>{item.dueDate}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="panel">
-            <div className="panel-header">
-              <h3>Health agent</h3>
-              <span className="pill info">Sensitive</span>
-            </div>
-            <div className="health-summary">
-              <p>Average sleep: <strong>{avgSleep.toFixed(1)} hours</strong></p>
-              <p>Activity: <strong>{dashboard.health.filter((item) => item.metric === 'steps').length} tracked sessions</strong></p>
-              <p className="note">AI interpretation is an advisory summary and not a diagnosis.</p>
-            </div>
-          </div>
-
-          <div className="panel wide">
-            <div className="panel-header">
-              <h3>Supervisor chat</h3>
-              <span className="pill neutral">Intent routing</span>
-            </div>
-
-            <form onSubmit={sendPrompt} className="chat-form">
-              <textarea
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                rows={4}
-                placeholder="Ask the supervisor..."
-              />
-              <button type="submit" disabled={loading}>
-                {loading ? 'Routing...' : 'Route request'}
-              </button>
-            </form>
-
-            <div className="response-box">
-              <small>{response.agent || 'No route yet'}</small>
-              <p>{response.response || 'The supervisor will route your request to the correct agent.'}</p>
-              {response.data && response.data.summary && <p>{response.data.summary}</p>}
-            </div>
-          </div>
-        </section>
-
-        <section className="bottom-grid">
-          <div className="panel">
-            <div className="panel-header">
-              <h3>Portfolio analysis</h3>
-              <span className="pill neutral">Read-only</span>
-            </div>
-            <ul className="portfolio-list">
-              {(dashboard.stock.portfolio || []).map((item) => (
-                <li key={item.symbol}>
-                  <span>{item.symbol}</span>
-                  <span>{item.shares} shares</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="panel">
-            <div className="panel-header">
-              <h3>Audit log</h3>
-              <span className="pill warning">Approved only</span>
-            </div>
-            <ul className="audit-list">
-              {(dashboard.audit || []).slice(0, 4).map((entry) => (
-                <li key={entry.id}>
-                  <strong>{entry.event}</strong>
-                  <small>{new Date(entry.timestamp).toLocaleString()}</small>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-      </main>
+      <main>{children}</main>
     </div>
   );
 }
 
-export default App;
+function Login({ setUser }) {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ email: '', password: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const submit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiFetch('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(form),
+      });
+      setToken(data.token);
+      sessionStorage.setItem('personalos.user', JSON.stringify(data.user));
+      setUser(data.user);
+      navigate('/chat');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <div className="auth-shell">
+      <form className="auth-card" onSubmit={submit}>
+        <h1>PersonalOS</h1>
+        <label>Email<input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
+        <label>Password<input type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
+        {error && <p className="error" role="alert">{error}</p>}
+        <button disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
+      </form>
+    </div>
+  );
+}
 
+function Chat() {
+  const [query, setQuery] = useState('');
+  const [reply, setReply] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const send = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    setReply(null);
+    try {
+      setReply(await apiFetch('/api/supervisor/route', {
+        method: 'POST',
+        body: JSON.stringify({ query }),
+      }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <section className="view">
+      <h1>Supervisor chat</h1>
+      <form onSubmit={send} className="chat-form">
+        <textarea required value={query} onChange={(e) => setQuery(e.target.value)} rows={4} />
+        <button disabled={loading}>{loading ? 'Routing...' : 'Send'}</button>
+      </form>
+      {loading && <p>Loading response...</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      {reply && (
+        <article className="panel">
+          <div className="panel-header">
+            <h2>{reply.agent || 'Supervisor'}</h2>
+            {reply?.data?.demo === true && <span className="badge">demo data</span>}
+          </div>
+          <p>{reply.response}</p>
+          <dl>
+            <dt>Agent</dt><dd>{reply.agent}</dd>
+            <dt>Workflow</dt><dd>{reply.workflow}</dd>
+            <dt>routing_path</dt><dd>{reply.routing_path || 'not provided'}</dd>
+            {reply.fallback_reason && <><dt>fallback_reason</dt><dd>{reply.fallback_reason}</dd></>}
+            <dt>Policy verdict</dt><dd>{reply.policy?.allowed ? 'allowed' : 'denied'}</dd>
+          </dl>
+          <h3>tool_calls</h3>
+          <pre>{JSON.stringify(reply.tool_calls || [], null, 2)}</pre>
+        </article>
+      )}
+    </section>
+  );
+}
 
+function Approvals() {
+  const [proposalId, setProposalId] = useState('');
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const submit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      setResult(await apiFetch('/api/investment/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ approved: true, proposalId, mfa_code: code }),
+      }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <section className="view">
+      <h1>Approvals</h1>
+      <p>Pending proposal listing endpoint not available.</p>
+      <form onSubmit={submit} className="form-grid">
+        <label>Proposal ID<input required value={proposalId} onChange={(e) => setProposalId(e.target.value)} /></label>
+        <label>MFA code<input required minLength={6} maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} /></label>
+        <button disabled={loading}>{loading ? 'Submitting...' : 'Confirm with MFA'}</button>
+      </form>
+      {loading && <p>Loading...</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      {result && <pre>{JSON.stringify(result, null, 2)}</pre>}
+    </section>
+  );
+}
 
+function Audit() {
+  const [entries, setEntries] = useState([]);
+  const [limit, setLimit] = useState(10);
+  const [offset, setOffset] = useState(0);
+  const [eventFilter, setEventFilter] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+      if (eventFilter) params.set('event', eventFilter);
+      const data = await apiFetch(`/api/audit-log?${params}`);
+      setEntries(data.entries || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, [limit, offset]);
+  return (
+    <section className="view">
+      <h1>Audit log</h1>
+      <div className="filters">
+        <label>Event<input value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} /></label>
+        <label>Limit<input type="number" min="1" max="100" value={limit} onChange={(e) => setLimit(Math.min(100, Math.max(1, Number(e.target.value))))} /></label>
+        <button onClick={load}>Apply</button>
+        <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>Previous</button>
+        <button onClick={() => setOffset(offset + limit)}>Next</button>
+      </div>
+      {loading && <p>Loading audit entries...</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      <table>
+        <thead><tr><th>ID</th><th>Time</th><th>Event</th><th>Details</th></tr></thead>
+        <tbody>{entries.map((entry) => (
+          <tr key={entry.id}>
+            <td>{entry.id}</td><td>{entry.timestamp}</td><td>{entry.event}</td>
+            <td><pre>{JSON.stringify(entry.details, null, 2)}</pre></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </section>
+  );
+}
+
+function Alerts() {
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    apiFetch('/api/security/alerts')
+      .then((data) => setAlerts(data.alerts || []))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+  return (
+    <section className="view">
+      <h1>Security alerts</h1>
+      {loading && <p>Loading alerts...</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      {!loading && !error && alerts.length === 0 && <p>No detection alerts.</p>}
+      <ul className="alert-list">{alerts.map((alert, index) => (
+        <li key={`${alert.rule_id}-${alert.first_seen}-${index}`}>
+          <strong>{alert.rule_id}</strong>
+          <span>{alert.severity}</span>
+          <span>Count: {alert.count}</span>
+          <pre>{JSON.stringify(alert, null, 2)}</pre>
+        </li>
+      ))}</ul>
+    </section>
+  );
+}
+
+function Documents() {
+  const [text, setText] = useState('');
+  const [filename, setFilename] = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const upload = async (event) => {
+    event.preventDefault();
+    if (new TextEncoder().encode(text).length > 200 * 1024) {
+      setError('Document exceeds 200 KB');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await apiFetch('/api/documents', {
+        method: 'POST',
+        body: JSON.stringify({ filename: filename || 'upload.txt', text }),
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const search = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({ q: query, limit: '20' });
+      const data = await apiFetch(`/api/documents/search?${params}`);
+      setResults(data.results || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <section className="view">
+      <h1>Documents</h1>
+      <form onSubmit={upload} className="form-grid">
+        <label>Filename<input value={filename} onChange={(e) => setFilename(e.target.value)} /></label>
+        <label>Text<textarea required rows={8} value={text} onChange={(e) => setText(e.target.value)} /></label>
+        <button disabled={loading}>{loading ? 'Uploading...' : 'Upload text'}</button>
+      </form>
+      <form onSubmit={search} className="form-grid">
+        <label>Search<input required value={query} onChange={(e) => setQuery(e.target.value)} /></label>
+        <button disabled={loading}>Search</button>
+      </form>
+      {loading && <p>Loading...</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      <ul className="results">{results.map((item) => (
+        <li key={item.chunk_id}>
+          <strong>{item.filename}</strong>
+          <span>Score: {item.score}</span>
+          <p>{item.text}</p>
+        </li>
+      ))}</ul>
+    </section>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        {({ user, authenticated, setUser }) => (
+          <Routes>
+            <Route path="/login" element={authenticated ? <Navigate to="/chat" replace /> : <Login setUser={setUser} />} />
+            <Route path="/" element={<Navigate to={authenticated ? '/chat' : '/login'} replace />} />
+            <Route path="/chat" element={<Protected authenticated={authenticated}><Layout user={user}><Chat /></Layout></Protected>} />
+            <Route path="/approvals" element={<Protected authenticated={authenticated}><Layout user={user}><Approvals /></Layout></Protected>} />
+            <Route path="/audit" element={<Protected authenticated={authenticated}><Layout user={user}><Audit /></Layout></Protected>} />
+            <Route path="/alerts" element={<Protected authenticated={authenticated}><Layout user={user}><Alerts /></Layout></Protected>} />
+            <Route path="/documents" element={<Protected authenticated={authenticated}><Layout user={user}><Documents /></Layout></Protected>} />
+            <Route path="*" element={<Navigate to={authenticated ? '/chat' : '/login'} replace />} />
+          </Routes>
+        )}
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
