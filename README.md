@@ -141,6 +141,37 @@ Agents call owner-scoped repositories after a capability check. The MCP adapters
 
 Document permissions `document.read` and `document.create` are granted only to NEW databases by `backend/app/seed.py`. Existing databases need re-seeding.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Client[Client] --> API[FastAPI]
+    API --> Supervisor[Supervisor]
+    Supervisor --> Policy[PolicyEngine]
+    Policy --> Agents[Renewal, Health, Finance, Document Agents]
+    Agents --> Repositories[Owner-scoped Repositories]
+
+    MCP[MCP layer]:::separate
+    MCP --- Protocol[Typed MCP servers and adapters]
+    Policy -. off the live path .- MCP
+
+    classDef separate stroke-dasharray: 5 5
+```
+
+The MCP layer is shown separately because it is a tested protocol foundation and is not on the live request path.
+
+## Results
+
+| method | n_correct/n_scored | accuracy | per-category |
+|---|---:|---:|---|
+| keyword | 15/36 | 41.67% | normal: 37.50%, ambiguous: 37.50%, multi_intent: 0.00%, adversarial: 100.00% |
+| llm_classifier | not run | not run | not run |
+| supervisor | not run | not run | not run |
+
+## Routing eval
+
+Queries and labels were drafted with AI assistance (the labelling assistant had seen the keyword list) and reviewed by the author, before any router was run. Adversarial cases measure routing, not safety.
+
 ## Phase 7 — MCP Server Transport
 
 > Status: this describes the protocol layer, which is tested but is NOT on the live request path. Agents call owner-scoped repositories after a capability check.
@@ -181,6 +212,3 @@ The API uses short-lived JWT bearer tokens and Argon2 password hashes (with bcry
 - The renewal "manage" action and the health "analysis" action only read data.
 - Agents call repositories directly, not through MCP. The MCP adapters, transport and registry are tested but off the live path.
 - Existing databases need re-seeding to receive the document.read and document.create capabilities.
-## Known limitations
-
-- Login rate limiting is in-memory and per-process; it resets when the server restarts. It is not production-grade.
