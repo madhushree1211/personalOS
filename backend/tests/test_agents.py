@@ -14,8 +14,6 @@ from app.agents.base import AgentContext
 from app.agents.renewal import RenewalAgent
 from app.agents.health import HealthAgent
 from app.agents.finance import FinanceAgent
-from app.agents.document import DocumentAgent
-from app.models import Document
 
 
 client = TestClient(app)

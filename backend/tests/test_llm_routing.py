@@ -4,7 +4,7 @@ import pytest
 
 from app.agents.classifier import SYSTEM_PROMPT, InvalidRoutingOutput, RoutingDecision, classify
 from app.agents.llm import FakeLLMClient
-from app.routing.contracts import AgentName, Capability, Intent
+from app.routing.contracts import Capability, Intent
 from app.routing.policy import PolicyEngine
 from app.routing.supervisor import SupervisorRoutingService
 

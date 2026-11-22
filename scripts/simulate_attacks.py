@@ -61,7 +61,6 @@ def main() -> None:
     rules = load_rules()
     alerts = evaluate(rules, synthetic_events)
     detected_rule_ids = {alert.rule_id for alert in alerts}
-    benign_events = [item for item in synthetic_events if item["label"] == "benign"]
 
     per_rule = {}
     for rule in rules:

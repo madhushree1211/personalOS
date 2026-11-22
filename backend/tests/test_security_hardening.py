@@ -5,9 +5,8 @@ from fastapi.testclient import TestClient
 
 from app.approval import ApprovalState, transition, verify_mfa
 from app.config import cors_middleware_options, get_settings
-from app.db import SessionLocal
 from app.main import app
-from app.models import InvestmentApproval, User
+from app.models import InvestmentApproval
 
 client = TestClient(app)
 
