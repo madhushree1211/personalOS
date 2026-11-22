@@ -122,7 +122,7 @@ checks. Only synthetic read-only renewal, health, and market tools are
 registered currently. Financial execution remains mock/sandbox-only and is not
 registered as an MCP tool.
 
-## Phase 7 — MCP Server Transport
+## MCP Server Transport
 
 The MCP servers provide a real protocol transport boundary for deterministic,
 read-only capabilities. They receive an already-authorized context from the
