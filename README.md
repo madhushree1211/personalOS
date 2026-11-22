@@ -212,3 +212,12 @@ The API uses short-lived JWT bearer tokens and Argon2 password hashes (with bcry
 - The renewal "manage" action and the health "analysis" action only read data.
 - Agents call repositories directly, not through MCP. The MCP adapters, transport and registry are tested but off the live path.
 - Existing databases need re-seeding to receive the document.read and document.create capabilities.
+- Dependency audit: `pip-audit` reports two advisories that are ignored in CI.
+  PYSEC-2026-4298 (python-jose) needs an unrestricted `algorithms` argument or an
+  asymmetric public key; this app always passes `algorithms=[HS256]` with a symmetric
+  secret. PYSEC-2026-1325 (ecdsa) is a timing attack on ECDSA signing; this app uses
+  HS256 and never signs with ECDSA. No fix is published for either. Replacing
+  python-jose with PyJWT would remove both and is a possible later change.
+- Bandit reports no medium or high severity findings in `backend/app`; low severity was not reviewed.
+- Ruff enforces pyflakes and a subset of pycodestyle; line length and one-line-statement
+  style are not enforced (see `pyproject.toml`).
