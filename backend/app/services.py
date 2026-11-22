@@ -1,5 +1,3 @@
-from datetime import date
-from .models import HealthRecord, Renewal
 from .models import InvestmentApproval, InvestmentProposal
 from .repositories import Repository
 

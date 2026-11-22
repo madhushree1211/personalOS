@@ -5,6 +5,8 @@ from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
+from ..audit import audit
+
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -61,9 +63,7 @@ class BaseAgent:
             ok = False
             raise
         finally:
-            from ..main import audit
-
-            audit(ctx.db, type("AuditUser", (), {"id": ctx.user_id})(), "agent-tool-call", {
+            audit(ctx.db, ctx.user_id, "agent-tool-call", {
                 "tool": tool,
                 "ok": ok,
             })

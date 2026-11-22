@@ -37,7 +37,7 @@ class RenewalOut(BaseModel):
     id: str
     name: str
     category: str
-    dueDate: date
+    dueDate: DateType
     reminderDays: int
     status: str
 

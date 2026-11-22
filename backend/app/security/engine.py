@@ -4,7 +4,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class Mitre(BaseModel):

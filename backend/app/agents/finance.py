@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import AgentContext, AgentResult, BaseAgent
+from ..audit import audit
 from ..models import InvestmentApproval, InvestmentProposal
 from ..repositories import Repository
 from ..approval import ApprovalState
@@ -38,9 +39,7 @@ class FinanceAgent(BaseAgent):
                 ctx.db.commit()
                 ctx.db.refresh(proposal)
                 ctx.db.refresh(approval)
-                from ..main import audit
-
-                audit(ctx.db, type("AuditUser", (), {"id": ctx.user_id})(),
+                audit(ctx.db, ctx.user_id,
                       "investment-proposal", {"proposalId": proposal.id})
                 return {
                     "id": proposal.id,

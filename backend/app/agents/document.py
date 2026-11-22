@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 
 from .base import AgentContext, AgentResult, BaseAgent
+from ..audit import audit
 from ..documents.tfidf import lexical_tfidf_search
 from ..repositories import Repository
 
@@ -36,9 +37,7 @@ class DocumentAgent(BaseAgent):
             ctx, "document.search", action,
             self.required_capability[action], search
         )
-        from ..main import audit
-
-        audit(ctx.db, type("AuditUser", (), {"id": ctx.user_id})(), "document-searched", {
+        audit(ctx.db, ctx.user_id, "document-searched", {
             "query_length": len(ctx.query),
             "query_sha256": hashlib.sha256(ctx.query.encode("utf-8")).hexdigest(),
             "result_count": len(results),

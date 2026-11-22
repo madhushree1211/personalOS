@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from .contracts import ApprovalStatus, ApprovalType, Capability, Intent, RiskLevel, RoutingDecision, AgentName
+from .contracts import ApprovalStatus, ApprovalType, Capability, Intent, RoutingDecision, AgentName
 from .capabilities import CapabilityRegistry, default_capability_registry
 
 

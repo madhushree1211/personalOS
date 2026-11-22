@@ -3,6 +3,7 @@ import hashlib
 from uuid import uuid4
 from datetime import date
 from threading import Lock
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -10,7 +11,17 @@ from .config import cors_middleware_options, get_settings
 from .db import Base, engine, get_db
 from .models import HealthRecord, Renewal, Document
 from .repositories import Repository
-from .schemas import *
+from .schemas import (
+    DocumentUpload,
+    HealthCreate,
+    InvestmentConfirmRequest,
+    InvestmentMFARequest,
+    InvestmentProposalRequest,
+    LoginRequest,
+    RenewalCreate,
+    RenewalUpdate,
+    RouteRequest,
+)
 from .seed import seed
 from .auth import current_user, create_access_token, verify_password, require_permission, revoke_token
 from .services import confirm_proposal, create_proposal, route_request, serialize_health, serialize_proposal, serialize_renewal
@@ -24,8 +35,17 @@ from .audit_context import audit_request
 from .documents.chunking import chunk_text
 from .documents.contracts import DocumentType
 from .documents.tfidf import lexical_tfidf_search
+from .audit import audit
 
-settings=get_settings(); app=FastAPI(title="PersonalOS API",version="3.0.0")
+settings=get_settings()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(engine)
+    if settings.seed_demo_data:
+        seed()
+    yield
+
+app=FastAPI(title="PersonalOS API",version="3.0.0", lifespan=lifespan)
 @app.middleware("http")
 async def add_audit_request_id(request: Request, call_next):
     request_id = str(uuid4())
@@ -43,10 +63,7 @@ app.add_middleware(
 )
 Base.metadata.create_all(engine)
 if settings.seed_demo_data: seed()
-@app.on_event("startup")
-def startup(): Base.metadata.create_all(engine); seed() if settings.seed_demo_data else None
 def repo(db,user): return Repository(db,user.id if user else None)
-def audit(db,user,event,details=None): Repository(db,user.id if user else None).log(event,details)
 def public_user(u): return {"id":u.id,"name":u.name,"email":u.email,"role":u.role,"permissions":u.permissions or []}
 def audit_cross_user_lookup(db, user, model, resource_id, resource_type, lookup_field="id"):
     record = db.query(model).filter(getattr(model, lookup_field) == resource_id, model.owner_id != user.id).first()
